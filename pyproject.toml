@@ -5,6 +5,9 @@ description = "Ward: drive a broken computer through fake peripherals."
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+ward = "ward.cli:main"
+
 [project.optional-dependencies]
 dev = ["pytest", "ruff"]
 
