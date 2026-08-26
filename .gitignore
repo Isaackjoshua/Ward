@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.eggs/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Lab VM images and disks (lab/ scripts stay tracked)
+lab/images/
+lab/vms/
+lab/*.d/
+*.qcow2
+*.qcow
+*.img
+*.iso
+*.raw
+*.vmdk
