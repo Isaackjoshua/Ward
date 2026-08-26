@@ -1,8 +1,8 @@
 # Ward — project rules
 
-## What Bedside is
+## What Ward is
 
-`bedside/` is the Python package behind Ward. Ward lets an operator drive a
+`ward/` is the Python package behind the project. Ward lets an operator drive a
 broken computer through fake peripherals: software reads the machine's screen
 as images and sends it keystrokes, so the broken machine — the *patient* —
 needs no working OS, no network and no drivers.

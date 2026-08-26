@@ -36,4 +36,4 @@ A single testable condition, not a description. It must be something a
 person or a test run can check and get a yes or no from.
 
 Example: `pytest tests/test_channel.py` passes and `ruff check` is clean,
-and `python -m bedside.lab reset wipe-bootloader` returns exit code 0.
+and `python -m ward.lab reset wipe-bootloader` returns exit code 0.
