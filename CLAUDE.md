@@ -15,25 +15,55 @@ to a physical machine.
 
 ## The rule that matters more than anything else in this project
 
-Every operation that touches a target machine must know whether it is in
-LIVE mode (the patient OS is running, use its own tools) or OFFLINE mode
-(we are in a rescue environment, the patient is a mounted disk, use chroot
-and manual edits). These are disjoint worlds with disjoint playbooks. Code
-that does not know which world it is in is a bug.
+Every operation that touches a target machine must know which mode it is in:
+
+- **LIVE** — the patient OS is running; use its own tools.
+- **OFFLINE** — we are in a rescue environment, the patient is a mounted
+  disk; use chroot and manual edits.
+- **FIRMWARE** — we are at a BIOS/UEFI screen; there is no OS to talk to.
+
+These are disjoint worlds with disjoint playbooks. Code that does not know
+which world it is in is a bug. The mode travels on `TargetDescription` so no
+caller has to infer it.
 
 ## Git rules, non-negotiable, apply to every session
 
-- Never push. The human pushes after reviewing.
-- Never commit to main. Work on branch `m0-skeleton` (and `mN-<name>` for
-  later milestones).
-- Never add collaborators, never run `gh`, never change remotes or git config.
-- Commit locally in small logical commits.
+- Never commit to main, never push to main, never force-push to any branch.
+- Work on one branch per milestone: `m0-skeleton`, and `mN-<name>` for later
+  milestones. Commit in small logical commits.
+- When a milestone's exit criteria pass, push that branch and open a pull
+  request against main, then **stop**. Never merge it — the human reviews and
+  merges on GitHub.
+- `gh` may be used to open and update that pull request, and for nothing else.
+  Never add collaborators, never touch `/collaborators` or `/invitations` or
+  any endpoint that changes repository access, never change remotes or git
+  config, and never create, delete or rename a remote branch other than the
+  current milestone branch.
+- Do not modify anything under `.github/` without asking first.
+
+## Scope discipline
+
+- Do not start a later milestone's work early, even if it seems trivial.
+- Stop at the end of every milestone and wait for review before starting the
+  next one.
+- If a milestone needs a design decision the human has not made, stop and ask.
+  Do not pick one and move on.
+- Prefer boring, obvious code. This is a diagnostics tool for broken machines;
+  clever code that fails unclearly is worse than verbose code that fails
+  loudly.
+
+## Safety
+
+- Ward's tools must never execute anything on the host machine. Every action
+  goes through a `Target`. If a code path could run on the host, that is a bug.
+- Never widen the capability tier of an action to make a test pass.
 
 ## How work is structured
 
 Milestones run DESIGN → BUILD → REVIEW with no context carried between
 phases. See `docs/WORKFLOW.md` for the loop and the prompt templates, and
-`docs/ROADMAP.md` for the milestone list.
+`docs/ROADMAP.md` for the milestone list. `SPEC.md` is the contract these
+milestones build toward.
 
 ## Conventions
 
