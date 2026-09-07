@@ -143,12 +143,15 @@ def drive_arg(path: Path, *, fmt: str = "qcow2", readonly: bool = False) -> list
     return ["-drive", spec]
 
 
-def base_argv(*, memory_mb: int, serial_log: Path) -> list[str]:
+def base_argv(
+    *, memory_mb: int, serial_log: Path, journal_log: Path | None = None
+) -> list[str]:
     """Return the QEMU arguments every lab VM shares.
 
-    Headless, no network, serial console captured to a file. The lab reads
-    the serial log to tell whether a machine failed the way it was supposed
-    to; screenshots are M2's business.
+    Two serial ports, both captured to files. ``ttyS0`` is the kernel's, and
+    ``ttyS1`` is where a prepared patient copies its journal — see
+    ``ward/lab/prepare.py`` for why the lab needs a channel that is not the
+    screen. Screenshots are the driver's business, not the lab's.
 
     Nothing in the lab gets a network. A machine we are repairing is not a
     machine that should be talking to anything, and the surgeon has no reason
@@ -158,6 +161,8 @@ def base_argv(*, memory_mb: int, serial_log: Path) -> list[str]:
     """
     require_tool(QEMU_SYSTEM)
     serial_log.parent.mkdir(parents=True, exist_ok=True)
+    if journal_log is not None:
+        journal_log.parent.mkdir(parents=True, exist_ok=True)
     argv = [
         QEMU_SYSTEM,
         "-machine",
@@ -175,6 +180,8 @@ def base_argv(*, memory_mb: int, serial_log: Path) -> list[str]:
         "-nic",
         "none",
     ]
+    # Order is the device order: the first -serial is ttyS0, the second ttyS1.
+    argv += ["-serial", f"file:{journal_log}" if journal_log else "null"]
     if kvm_available():
         argv += ["-cpu", "host"]
     return argv

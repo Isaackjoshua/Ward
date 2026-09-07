@@ -14,6 +14,7 @@ import pytest
 
 from ward.lab import lab, paths, qemu
 from ward.lab.faults import PATIENT_ROOT_PARTITION, PATIENT_SERIAL, get_fault
+from ward.lab.prepare import CONSOLE_ARGUMENTS, PREPARE_SCRIPT, ROOT_PASSWORD
 
 
 @pytest.fixture(autouse=True)
@@ -37,15 +38,66 @@ def test_surgeon_user_data_is_valid_cloud_config() -> None:
     assert "poweroff" in user_data
 
 
-def test_surgeon_carries_the_script_verbatim() -> None:
+def _scripts(user_data: str) -> list[str]:
+    """Every script the surgeon is handed, decoded, in order."""
+    return [
+        base64.b64decode(row.split("content:", 1)[1].strip()).decode("utf-8")
+        for row in user_data.splitlines()
+        if row.strip().startswith("content:")
+    ]
+
+
+def test_surgeon_carries_the_scripts_verbatim() -> None:
     """base64, so quoting in a breaker can never corrupt the cloud-config."""
     fault = get_fault("network-down")
-    user_data = lab._surgeon_user_data(fault)
-    line = next(
-        row for row in user_data.splitlines() if row.strip().startswith("content:")
-    )
-    encoded = line.split("content:", 1)[1].strip()
-    assert base64.b64decode(encoded).decode("utf-8") == fault.apply_script
+    prepare, breaker = _scripts(lab._surgeon_user_data(fault))
+    assert breaker == fault.apply_script
+    assert prepare == PREPARE_SCRIPT
+
+
+def test_every_patient_is_prepared_before_it_is_broken() -> None:
+    """Preparing needs a mounted filesystem and an intact GRUB.
+
+    Several breakers take one or both of those away, so the order is not a
+    stylistic choice.
+    """
+    user_data = lab._surgeon_user_data(get_fault("grub-missing"))
+    runner = next(row for row in user_data.splitlines() if lab.SURGEON_MARKER in row)
+    command = json.loads(runner.split("- ", 1)[1])
+    assert command.index("ward-prepare.sh") < command.index("ward-breaker.sh")
+
+
+def test_preparing_puts_the_screen_last_so_it_becomes_dev_console() -> None:
+    """The last console on the command line is the one userspace writes to.
+
+    Debian ships ttyS0 last, which is why an unprepared patient's screen
+    freezes seconds into boot — the whole reason this step exists.
+    """
+    assert CONSOLE_ARGUMENTS.split()[-1] == "console=tty0"
+    assert "console=ttyS0" in CONSOLE_ARGUMENTS
+    # Whatever the image shipped is stripped first, so this cannot accumulate.
+    assert "s/[[:space:]]+console=[^[:space:]]+//g" in PREPARE_SCRIPT
+    assert CONSOLE_ARGUMENTS in PREPARE_SCRIPT
+
+
+def test_patients_get_a_root_password_so_the_rescue_shell_opens() -> None:
+    """Debian's cloud image locks root, and sulogin then refuses to start.
+
+    A machine whose emergency shell cannot be entered is not a harder test
+    than a real broken machine, it is an impossible one.
+    """
+    assert "/etc/shadow" in PREPARE_SCRIPT
+    assert "$6$wardlabsalt" in PREPARE_SCRIPT
+    assert ROOT_PASSWORD == "ward"
+
+
+def test_the_lab_keeps_a_channel_that_is_not_the_screen() -> None:
+    """Otherwise taking the screen back would cost the lab its signatures."""
+    assert "/dev/ttyS1" in PREPARE_SCRIPT
+    # Emergency mode isolates its target and would otherwise stop the tap
+    # exactly when it starts being interesting.
+    assert "IgnoreOnIsolate=yes" in PREPARE_SCRIPT
+    assert "sysinit.target.wants" in PREPARE_SCRIPT
 
 
 def test_surgeon_reports_its_exit_status_on_the_serial_console() -> None:

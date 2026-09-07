@@ -70,6 +70,7 @@ class QemuTarget:
     disk: Path | None = None
     memory_mb: int = 1024
     serial_log: Path | None = None
+    journal_log: Path | None = None
     timeout: float = 15.0
 
     _process: subprocess.Popen[bytes] | None = field(default=None, repr=False)
@@ -88,6 +89,7 @@ class QemuTarget:
         os_family: OsFamily = OsFamily.UNKNOWN,
         memory_mb: int = 1024,
         serial_log: Path | None = None,
+        journal_log: Path | None = None,
         run_dir: Path | None = None,
         timeout: float = 15.0,
         boot_timeout: float = 30.0,
@@ -107,6 +109,7 @@ class QemuTarget:
             disk=disk,
             memory_mb=memory_mb,
             serial_log=serial_log,
+            journal_log=journal_log,
             timeout=timeout,
         )
         target._spawn(boot_timeout=boot_timeout)
@@ -165,7 +168,15 @@ class QemuTarget:
             self.serial_log.parent.mkdir(parents=True, exist_ok=True)
             argv += ["-serial", f"file:{self.serial_log}"]
         else:
-            argv += ["-serial", "none"]
+            argv += ["-serial", "null"]
+        # A second port, because a prepared lab patient copies its journal to
+        # ttyS1. Without the device the copy fails and the guest logs about it
+        # forever. Ward itself never reads this — it has eyes.
+        if self.journal_log is not None:
+            self.journal_log.parent.mkdir(parents=True, exist_ok=True)
+            argv += ["-serial", f"file:{self.journal_log}"]
+        else:
+            argv += ["-serial", "null"]
         return argv
 
     def _spawn(self, *, boot_timeout: float) -> None:

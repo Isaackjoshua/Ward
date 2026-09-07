@@ -86,10 +86,13 @@ ward lab reset                  # every machine back to freshly broken
 Each machine keeps a `pristine.qcow2` taken the moment it was broken, so
 `reset` is a file copy and every run starts from a byte-identical machine.
 
-One honest caveat: Debian's cloud image sends its console to the serial port,
-so a lab patient's *screen* stops changing once early boot is over. The lab
-exercises Ward's hands and power button faithfully, and its eyes only partly.
-See D4 in `docs/DECISIONS.md` for why that was not papered over.
+Before a patient is broken it is *prepared*: the display is made
+`/dev/console`, so screenshots show what a person standing at the machine
+would see, and root gets the password `ward` so an emergency or rescue shell
+can actually be entered. The lab reads a second serial port, where the
+patient copies its own journal, rather than competing for the screen. D4 and
+D5 in `docs/DECISIONS.md` explain both, including why a known password is
+safe here and nowhere else.
 
 ## Reviewing a run
 

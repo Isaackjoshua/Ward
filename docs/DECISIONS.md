@@ -42,22 +42,44 @@ a text console a blinking cursor is a change, so `wait-for-change` will
 usually return within one blink. Treat it as "the machine is still alive",
 not as "the machine has finished".
 
-## D4 — Lab patients talk to the serial console, so their screens go quiet
+## D4 — The screen belongs to the operator; the lab reads a second serial port
 
-*M1.* Debian's cloud image sets `console=ttyS0`, so once the kernel hands
-over to userspace nothing more is drawn on the emulated VGA. A screenshot of
-a lab patient shows early boot and then stops changing, even while the
-machine is very much still doing things.
+*M1.* Debian's cloud image puts `console=ttyS0` last on the kernel command
+line. Every console still receives what the kernel prints, but `/dev/console`
+— where systemd, the initramfs and any emergency shell write — becomes the
+serial port. The emulated display froze a second or two into boot and showed
+nothing afterwards, which is fatal for a tool whose whole premise is looking
+at the screen.
 
-This matters, because eyes are the whole point. It was left as it is rather
-than half-fixed: putting `tty0` last on the kernel command line moves the
-screen output back where an agent can see it, but it also moves systemd's
-messages *off* the serial console, and the lab's own `ward lab check` reads
-that serial log to decide whether a fault reproduced. Fixing one breaks the
-other.
+Every patient is now *prepared* before it is broken: `tty0` goes last, so the
+display is `/dev/console` and shows what a person standing at the machine
+would see.
 
-**Cost:** the lab exercises Ward's hands and power button honestly, but only
-partly exercises its eyes. A real broken machine, which has no serial console
-to prefer, does not have this problem. Getting both — screen output for the
-agent and a serial log for the lab — is the first thing to fix before the
-lab is used to evaluate an agent's ability to *read* a screen.
+That alone would have cost the lab its failure signatures, because
+`ward lab check` read exactly those systemd messages off the serial port. So
+a prepared patient also gets a second serial port and a small service that
+copies its journal there. The operator gets the screen, the lab gets the
+journal, and neither is taking the other's channel. The service is marked
+`IgnoreOnIsolate=yes`, because dropping to emergency mode isolates that
+target and would otherwise kill the tap exactly when it becomes interesting.
+
+**Cost:** patients are no longer a stock Debian image — Ward edits
+`grub.cfg` and installs one unit before breaking anything. A repair that
+regenerates the boot configuration keeps the console order, because
+`/etc/default/grub` is edited too.
+
+## D5 — Lab patients have a root password
+
+*M1.* Debian's cloud image ships with root locked, so `sulogin` refuses to
+start and an emergency shell says "Cannot open access to console, the root
+account is locked" and reboots. An agent could see the failure and do nothing
+about it.
+
+A machine nobody can log into is not a harder test than a real broken
+machine, it is an impossible one. Prepared patients get the root password
+`ward`, written straight into `/etc/shadow`.
+
+**Cost:** a known password in the repository. It is safe only because lab
+patients have no network and exist to be destroyed. Nothing outside the lab
+may ever do this, and no real target should be assumed to be this
+co-operative.

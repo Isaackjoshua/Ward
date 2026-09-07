@@ -115,7 +115,8 @@ def run_attempt(
         machine.patient_disk,
         name=machine.name,
         mode=fault.repair_mode,
-        serial_log=machine.directory / "boot.log",
+        serial_log=machine.boot_log,
+        journal_log=machine.journal_log,
         run_dir=machine.directory / "run",
     )
     session_state.save(

@@ -40,6 +40,7 @@ from ward.lab.faults import (
     get_fault,
 )
 from ward.lab.paths import vm_dir, vms_dir
+from ward.lab.prepare import PREPARE_SCRIPT
 from ward.qmp import QmpClient
 
 #: The surgeon prints this on the serial console before powering off, so the
@@ -86,7 +87,17 @@ class LabVM:
 
     @property
     def boot_log(self) -> Path:
+        """Serial port one: what the kernel printed."""
         return self.directory / "boot.log"
+
+    @property
+    def journal_log(self) -> Path:
+        """Serial port two: the journal, copied there by the patient itself.
+
+        The screen belongs to the operator now, so this is how the lab reads
+        what systemd had to say about a boot.
+        """
+        return self.directory / "journal.log"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -148,7 +159,11 @@ def _surgeon_user_data(fault: Fault) -> str:
     operating on a mounted, running root filesystem.
     """
     encoded = base64.b64encode(fault.apply_script.encode("utf-8")).decode("ascii")
-    # Everything the breaker does goes to the serial console, traced. When a
+    prepared = base64.b64encode(PREPARE_SCRIPT.encode("utf-8")).decode("ascii")
+    # Prepare first, break second. Preparing needs the filesystem mounted and
+    # GRUB intact, and several breakers take one or both of those away.
+    #
+    # Everything both scripts do goes to the serial console, traced. When a
     # breaker fails there is no shell to log into and no second chance: the
     # surgery log has to be enough to say why on its own.
     runner = (
@@ -157,6 +172,7 @@ def _surgeon_user_data(fault: Fault) -> str:
         f"[ -b {PATIENT_ROOT_PARTITION} ] && break; sleep 1; done; "
         "{ lsblk; "
         f"mount {PATIENT_ROOT_PARTITION} {PATIENT_MOUNT} && "
+        "sh -x /var/lib/ward-prepare.sh && "
         "sh -x /var/lib/ward-breaker.sh; } > /dev/ttyS0 2>&1; rc=$?; "
         f"umount -R {PATIENT_MOUNT} 2>/dev/null; sync; "
         f'echo "{SURGEON_MARKER}:$rc" > /dev/ttyS0'
@@ -165,6 +181,10 @@ def _surgeon_user_data(fault: Fault) -> str:
         [
             "#cloud-config",
             "write_files:",
+            "  - path: /var/lib/ward-prepare.sh",
+            "    permissions: '0755'",
+            "    encoding: b64",
+            f"    content: {prepared}",
             "  - path: /var/lib/ward-breaker.sh",
             "    permissions: '0755'",
             "    encoding: b64",
@@ -370,26 +390,34 @@ class BootCheck:
 
 
 def check(name: str, *, seconds: float | None = None) -> BootCheck:
-    """Boot a patient, watch the serial console, and judge the failure.
+    """Boot a patient, watch both serial ports, and judge the failure.
 
     This is how the lab proves a fault is reproducible: the machine must fail
     the same recognisable way every time. It is deliberately not a ``Target``
-    — it reads a serial log, which real broken hardware will not give us.
+    — it reads serial logs, which real broken hardware will not give us. The
+    screen is left alone for the operator and for Ward's own eyes.
     """
     machine = load_vm(name)
     fault = get_fault(machine.fault)
     observe = fault.observe_seconds if seconds is None else seconds
 
     log = machine.boot_log
+    journal = machine.journal_log
     log.unlink(missing_ok=True)
-    argv = qemu.base_argv(memory_mb=_PATIENT_MEMORY_MB, serial_log=log)
+    journal.unlink(missing_ok=True)
+    argv = qemu.base_argv(
+        memory_mb=_PATIENT_MEMORY_MB, serial_log=log, journal_log=journal
+    )
     argv += qemu.drive_arg(machine.patient_disk)
 
     started = time.monotonic()
     qemu.run_vm(argv, timeout=observe)
     elapsed = time.monotonic() - started
 
-    output = _read_log(log)
+    # Both channels count as "what the machine said". A fault may show itself
+    # in the kernel's output, in systemd's, or in neither — silence is
+    # grub-missing's whole signature.
+    output = _read_log(log) + "\n" + _read_log(journal)
     return BootCheck(
         vm=machine.name,
         fault=fault.name,

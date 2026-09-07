@@ -15,6 +15,7 @@ from ward import session
 from ward.lab import lab
 from ward.lab.base import DEFAULT_BASE, ensure_base_image
 from ward.lab.faults import FAULTS, get_fault
+from ward.lab.prepare import ROOT_PASSWORD
 from ward.qemu_target import QemuTarget
 from ward.types import Mode, OsFamily
 
@@ -159,7 +160,8 @@ def cmd_boot(args: argparse.Namespace) -> int:
         machine.patient_disk,
         name=machine.name,
         mode=mode,
-        serial_log=machine.directory / "boot.log",
+        serial_log=machine.boot_log,
+        journal_log=machine.journal_log,
         run_dir=machine.directory / "run",
     )
     record = session.Session(
@@ -179,7 +181,9 @@ def cmd_boot(args: argparse.Namespace) -> int:
     return _emit(
         record.to_dict(),
         f"booted {machine.name!r} and attached in {mode} mode{guessed}. "
-        f"Take a look with 'ward screenshot'.",
+        f"Take a look with 'ward screenshot'. The root password on lab "
+        f"patients is {ROOT_PASSWORD!r}, which is how you get into a rescue "
+        f"or emergency shell.",
     )
 
 
