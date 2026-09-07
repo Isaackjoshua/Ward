@@ -13,6 +13,7 @@ from ward.evaluate import (
     count_actions,
     results_table,
 )
+from ward.lab.lab import BootCheck
 from ward.png import solid_png
 from ward.replay import render_timeline, summarise
 
@@ -112,6 +113,43 @@ def test_a_machine_broken_a_new_way_is_made_worse() -> None:
     outcome, why = _grade("fstab-bad-uuid", "SeaBIOS ... No bootable device")
     assert outcome == MADE_WORSE
     assert "something else is broken" in why
+
+
+def test_grading_reads_the_channel_the_evidence_actually_lands_on() -> None:
+    """Regression: an untouched machine was once graded 'made worse'.
+
+    Since the screen became /dev/console, systemd's messages go to the second
+    serial port and the kernel's to the first. Grading from one file alone
+    saw no recognisable failure and concluded something new had broken. These
+    are the real lines from that run.
+    """
+    kernel_only = "[    0.720000] Linux version 6.1.0-18-amd64\n"
+    systemd_only = (
+        "Sep 07 11:52:58 localhost systemd[1]: Dependency failed for "
+        "srv-data.mount - /srv/data.\n"
+        "Sep 07 11:52:58 localhost systemd[1]: Dependency failed for "
+        "local-fs.target - Local File Systems.\n"
+    )
+    assert _grade("fstab-bad-uuid", kernel_only)[0] == MADE_WORSE
+    assert _grade("fstab-bad-uuid", kernel_only + systemd_only)[0] == NOT_FIXED
+
+
+def test_a_boot_check_carries_everything_the_machine_said() -> None:
+    """So nobody downstream has to guess which log file to open."""
+    check = BootCheck(
+        vm="x",
+        fault="fstab-bad-uuid",
+        broke_as_expected=True,
+        seconds_observed=1.0,
+        serial_log=Path("/lab/x/boot.log"),
+        tail="",
+        transcript="kernel said this\nsystemd said that",
+    )
+    assert "systemd said that" in check.transcript
+    assert check.journal_log == Path("/lab/x/journal.log")
+    # And the transcript stays out of the JSON: it is large and already on disk.
+    assert "transcript" not in check.to_dict()
+    assert check.to_dict()["journal_log"] == "/lab/x/journal.log"
 
 
 def test_network_down_is_reported_as_ungradeable_not_guessed() -> None:

@@ -161,8 +161,10 @@ def run_attempt(
     session_state.clear()
 
     check = lab.check(fault_name)
-    serial = check.serial_log.read_text(encoding="utf-8", errors="replace")
-    outcome, detail = _grade(fault_name, serial)
+    # Both serial channels, as the lab itself read them. Re-reading one log
+    # file here would miss whichever half of the story landed on the other,
+    # and grade a machine that failed exactly as intended as made worse.
+    outcome, detail = _grade(fault_name, check.transcript)
     if agent_exit == -1:
         detail = f"the agent ran out of time after {timeout:.0f}s; {detail}"
 

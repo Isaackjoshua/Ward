@@ -378,15 +378,27 @@ class BootCheck:
     seconds_observed: float
     serial_log: Path
     tail: str
+    #: Everything the machine said, both serial ports together. Anyone
+    #: judging this boot must read *this*, not one of the log files: since
+    #: the screen became /dev/console, the kernel's channel and systemd's are
+    #: different files and neither is the whole story on its own.
+    transcript: str = ""
 
     def to_dict(self) -> dict[str, object]:
+        # The transcript is tens of kilobytes and is on disk already, so it
+        # stays out of the JSON. The log paths are how you go and read it.
         return {
             "vm": self.vm,
             "fault": self.fault,
             "broke_as_expected": self.broke_as_expected,
             "seconds_observed": round(self.seconds_observed, 1),
             "serial_log": str(self.serial_log),
+            "journal_log": str(self.journal_log),
         }
+
+    @property
+    def journal_log(self) -> Path:
+        return self.serial_log.with_name("journal.log")
 
 
 def check(name: str, *, seconds: float | None = None) -> BootCheck:
@@ -425,4 +437,5 @@ def check(name: str, *, seconds: float | None = None) -> BootCheck:
         seconds_observed=elapsed,
         serial_log=log,
         tail="\n".join(output.splitlines()[-20:]),
+        transcript=output,
     )
