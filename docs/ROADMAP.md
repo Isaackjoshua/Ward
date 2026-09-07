@@ -1,8 +1,7 @@
 # Roadmap
 
-Milestones run DESIGN → BUILD → REVIEW with no context carried between
-phases; see `docs/WORKFLOW.md`. Work stops at the end of each milestone and
-waits for human review. Do not start a later milestone's work early.
+Milestones run DESIGN → BUILD → REVIEW; see `docs/WORKFLOW.md`. They run in
+order, each one landing on `main` once `pytest` and `ruff` are clean.
 
 ## M0 — Contracts and skeleton
 
