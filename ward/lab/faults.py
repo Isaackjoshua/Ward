@@ -82,21 +82,21 @@ class Fault:
 
 FSTAB_BAD_UUID = Fault(
     name="fstab-bad-uuid",
-    summary="/etc/fstab names a root UUID that does not exist; boot stops in "
-    "emergency mode",
+    summary="/etc/fstab requires a filesystem whose UUID does not exist; boot "
+    "stops in emergency mode",
     repair_mode=Mode.LIVE,
-    # Matched by what the line *is* — the entry whose mount point is / —
-    # rather than by how this particular image happens to name the device.
-    # Debian has shipped UUID=, LABEL= and /dev/ names here over the years.
+    # Not the root line. Rewriting that does nothing here: the kernel has
+    # already mounted root from the PARTUUID on its command line, and systemd
+    # does not go back and re-check it. What does stop a boot is an ordinary
+    # required entry that cannot be satisfied — local-fs.target fails, and
+    # everything that wanted it gives up.
     apply_script=rf"""
 set -eu
 fstab={PATIENT_MOUNT}/etc/fstab
 cat "$fstab"
-awk '$0 !~ /^[[:space:]]*#/ && NF >= 2 && $2 == "/" \
-       {{ $1 = "UUID=deadbeef-0000-0000-0000-000000000000"; found = 1 }}
-     {{ print }}
-     END {{ if (!found) exit 1 }}' "$fstab" > /tmp/fstab.broken
-cat /tmp/fstab.broken > "$fstab"
+mkdir -p {PATIENT_MOUNT}/srv/data
+printf 'UUID=deadbeef-0000-0000-0000-000000000000 /srv/data ext4 defaults 0 2\n' \
+  >> "$fstab"
 grep -q 'deadbeef-0000-0000-0000-000000000000' "$fstab"
 """,
     failure_any=(
@@ -106,11 +106,16 @@ grep -q 'deadbeef-0000-0000-0000-000000000000' "$fstab"
     ),
     failure_absent=(),
     repair=(
-        "Read the real root filesystem UUID (blkid, or lsblk -f), put it back "
-        "in /etc/fstab, then systemctl daemon-reload and reboot. A repair that "
-        "deletes the root line instead of fixing it is wrong: the machine will "
-        "boot but / will be mounted read-only on the next fsck."
+        "Log into the emergency shell, read /etc/fstab, and find the entry "
+        "whose UUID no filesystem has (compare against blkid or lsblk -f). "
+        "Either point it at the right filesystem or remove the line, then "
+        "systemctl daemon-reload and reboot. Marking it nofail hides the "
+        "symptom without answering why the entry was there."
     ),
+    # systemd waits its full 90 second device timeout before admitting the
+    # filesystem is never turning up, and only then drops to emergency mode.
+    # Watching for less than that sees a machine that looks merely slow.
+    observe_seconds=210.0,
 )
 
 GRUB_MISSING = Fault(
@@ -167,15 +172,21 @@ done
 
 ROOTFS_ERRORS = Fault(
     name="rootfs-errors",
-    summary="the root filesystem's primary superblock is zeroed; the disk "
-    "will not mount until fsck rebuilds it from a backup",
+    summary="the root filesystem is inconsistent in a way fsck will not fix "
+    "on its own; boot stops and asks for a manual check",
     repair_mode=Mode.OFFLINE,
+    # Not the superblock. /boot lives on this same filesystem, so anything
+    # bad enough to stop Linux mounting it also stops GRUB loading a kernel,
+    # and the machine fails silently at the firmware instead — which is
+    # grub-missing's failure, not this one. Corrupting /var leaves everything
+    # GRUB reads intact and still makes fsck refuse to proceed unattended.
     apply_script=rf"""
 set -eu
 umount -R {PATIENT_MOUNT}
-dd if=/dev/zero of={PATIENT_ROOT_PARTITION} bs=1024 seek=1 count=1 conv=notrunc
+debugfs -w -R "sif /var mode 0100644" {PATIENT_ROOT_PARTITION}
+debugfs -w -R "ssv state 0" {PATIENT_ROOT_PARTITION}
 sync
-! dumpe2fs -h {PATIENT_ROOT_PARTITION} >/dev/null 2>&1
+! e2fsck -p -f {PATIENT_ROOT_PARTITION}
 """,
     failure_any=(
         r"unable to read superblock",
@@ -187,9 +198,11 @@ sync
     ),
     failure_absent=(r"login:",),
     repair=(
-        "Boot rescue media and run e2fsck -b 32768 /dev/vda1 to restore the "
-        "superblock from a backup, then reboot. Do not mkfs — that is a repair "
-        "that destroys the patient, which counts as made worse, not fixed."
+        "Run e2fsck manually on the root filesystem and answer its questions "
+        "— it will want to reconnect /var. Do this from the initramfs shell "
+        "or from rescue media, never on a mounted read-write root. Do not "
+        "mkfs: that is a repair which destroys the patient, and counts as "
+        "made worse rather than fixed."
     ),
 )
 
