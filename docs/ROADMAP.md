@@ -3,6 +3,8 @@
 Milestones run DESIGN → BUILD → REVIEW; see `docs/WORKFLOW.md`. They run in
 order, each one landing on `main` once `pytest` and `ruff` are clean.
 
+M0 to M5 are built. M6 is hardware and has not been started.
+
 ## M0 — Contracts and skeleton
 
 The `Target` protocol, the dataclasses, the capability tiers, and a
