@@ -144,7 +144,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     waiting = subcommands.add_parser(
         "wait-for-change",
-        help="block until the screen changes",
+        help="block until the screen changes (note: on a text console a "
+        "blinking cursor counts as a change)",
     )
     waiting.add_argument("--timeout", type=float, default=30.0)
     waiting.add_argument("--poll", type=float, default=0.5)

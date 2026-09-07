@@ -37,4 +37,27 @@ callers can reason about the screen without parsing it.
 
 **Cost:** anything that eventually wants to compare screens pixel by pixel
 has to decode first. `ward wait-for-change` therefore compares hashes, which
-detects any change but cannot describe it.
+detects any change but cannot describe it — and cannot ignore one either. On
+a text console a blinking cursor is a change, so `wait-for-change` will
+usually return within one blink. Treat it as "the machine is still alive",
+not as "the machine has finished".
+
+## D4 — Lab patients talk to the serial console, so their screens go quiet
+
+*M1.* Debian's cloud image sets `console=ttyS0`, so once the kernel hands
+over to userspace nothing more is drawn on the emulated VGA. A screenshot of
+a lab patient shows early boot and then stops changing, even while the
+machine is very much still doing things.
+
+This matters, because eyes are the whole point. It was left as it is rather
+than half-fixed: putting `tty0` last on the kernel command line moves the
+screen output back where an agent can see it, but it also moves systemd's
+messages *off* the serial console, and the lab's own `ward lab check` reads
+that serial log to decide whether a fault reproduced. Fixing one breaks the
+other.
+
+**Cost:** the lab exercises Ward's hands and power button honestly, but only
+partly exercises its eyes. A real broken machine, which has no serial console
+to prefer, does not have this problem. Getting both — screen output for the
+agent and a serial log for the lab — is the first thing to fix before the
+lab is used to evaluate an agent's ability to *read* a screen.
