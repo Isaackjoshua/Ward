@@ -1,9 +1,11 @@
 """A minimal PNG encoder, standard library only.
 
-Ward has no image dependency in phase one. The only picture it needs to
-manufacture is a canned screenshot for :class:`ward.fake.FakeTarget`, so a
-flat-colour 8-bit RGB encoder is enough. Real drivers get their PNG bytes
-from the transport and never come through here.
+Ward has no image dependency in phase one. Two things need one: the canned
+screenshots :class:`ward.fake.FakeTarget` hands out, and real screenshots
+from QEMU, which arrive as PPM on older QEMU builds and have to be re-encoded
+before anything can look at them.
+
+8-bit truecolour RGB, no filtering, is enough for both.
 """
 
 from __future__ import annotations
@@ -22,14 +24,26 @@ def _chunk(kind: bytes, payload: bytes) -> bytes:
     )
 
 
-def solid_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
-    """Return PNG bytes for a ``width`` x ``height`` image of one colour."""
+def encode_rgb(width: int, height: int, pixels: bytes) -> bytes:
+    """Return PNG bytes for ``width`` x ``height`` packed RGB triples.
+
+    ``pixels`` is one flat run of ``R, G, B`` bytes, top row first, with no
+    padding — which is exactly what a binary PPM body is.
+    """
     if width <= 0 or height <= 0:
         raise ValueError(f"image must have positive dimensions, got {width}x{height}")
+    expected = width * height * 3
+    if len(pixels) != expected:
+        raise ValueError(
+            f"expected {expected} bytes of RGB for {width}x{height}, got {len(pixels)}"
+        )
 
     # Each scanline is a filter byte (0 = no filter) followed by RGB triples.
-    row = bytes([0]) + bytes(rgb) * width
-    raw = row * height
+    stride = width * 3
+    raw = b"".join(
+        b"\x00" + pixels[offset : offset + stride]
+        for offset in range(0, expected, stride)
+    )
 
     header = struct.pack(
         ">IIBBBBB",
@@ -47,3 +61,10 @@ def solid_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
         + _chunk(b"IDAT", zlib.compress(raw))
         + _chunk(b"IEND", b"")
     )
+
+
+def solid_png(width: int, height: int, rgb: tuple[int, int, int]) -> bytes:
+    """Return PNG bytes for a ``width`` x ``height`` image of one colour."""
+    if width <= 0 or height <= 0:
+        raise ValueError(f"image must have positive dimensions, got {width}x{height}")
+    return encode_rgb(width, height, bytes(rgb) * (width * height))
